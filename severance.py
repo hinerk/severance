@@ -41,22 +41,28 @@ class Severance(ABC):
         :param _is_parent: Private: do not touch!
         whether to instantiate a child or a parent
         """
-        self._is_parent = _is_parent
         self._poll_timeout = poll_timeout
-        if _is_parent:
-            self._conn, child_conn = Pipe()
-            self._is_running = Value('b', False)
-            self._child_process = Process(
-                target=self._create_child_process,
-                kwargs=dict(
-                    poll_timeout=poll_timeout,
-                    conn=child_conn,
-                    is_running=self._is_running))
-            self._child_process.start()
-        else:
-            self._conn = _conn
-            self._is_running = _is_running
-            self._poll_timeout = poll_timeout
+        self._conn = _conn
+        self._is_running = _is_running
+        self._is_parent = _is_parent
+
+        if not _is_parent:
+            return
+
+        self._conn, child_conn = Pipe()
+        self._is_running = Value('b', False)
+        self._child_process = Process(
+            target=self._create_child_process,
+            kwargs=dict(
+                poll_timeout=poll_timeout,
+                conn=child_conn,
+                is_running=self._is_running))
+        self._child_process.start()
+
+    def __getstate__(self):
+        __dict__ = self.__dict__.copy()
+        __dict__['_child_process'] = None
+        return __dict__
 
     @classmethod
     def _create_child_process(
@@ -93,6 +99,10 @@ class Severance(ABC):
         if not self._is_parent:
             raise RuntimeError(
                 "join() shall not be called in the child process!")
+        if self._child_process is None:
+            # if not a child and _child_process is None, this instance likely
+            # is a copy
+            return
         self._is_running.value = False
         self._child_process.join(timeout)
 
